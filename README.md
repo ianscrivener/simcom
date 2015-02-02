@@ -1,26 +1,48 @@
-# SIM900 [![Build Status](https://secure.travis-ci.org//sim900.png?branch=master)](http://travis-ci.org//sim900)
+simcom
+============
 
-The best module ever.
+Talk to GSM modem from SIMCOM via serial port using Node
+--
+This module was written with Raspberry Pi aspect in mind, but it basically should work on all linux distros, it might work on Windows as well (not tested yet), you just need a serial port filesystem (/dev/ttyAMA0 for RPi).
 
-## Getting Started
-Install the module with: `npm install sim900`
+It has been tested on SIM800L module.
 
-```javascript
-var sim900 = require('sim900');
-sim900.awesome(); // "awesome"
+# Installation
+```sh
+npm install simcom
 ```
 
-## Documentation
-_(Coming soon)_
+# Example
 
-## Examples
-_(Coming soon)_
+### Openning the port
+```javascript
+var modem = require('simcom').modem('/dev/ttyAMA0');
 
-## Contributing
-In lieu of a formal styleguide, take care to maintain the existing coding style. Add unit tests for any new or changed functionality. Lint and test your code using [Grunt](http://gruntjs.com/).
+modem.on('open', function() {
+  // do something with the modem
+});
 
-## Release History
-_(Nothing yet)_
+modem.error('error', function() {
 
-## License
-Copyright (c) 2014 Yuri Sementsov. Licensed under the MIT license.
+});
+
+modem.open(); // open the port
+```
+
+The `modem` function is a factory function, it creates an instance of `Modem` class for a device if neccessary.
+
+### Sending raw data
+Talk directly to the modem using `Modem.write()` method.
+```javascript
+modem.write('ATI\r');
+```
+
+### Executing a command
+`Modem.execute()` returns a promise which you can easily setup callbacks to process the response or error.
+```javascript
+modem.execute('ATI').then(function(lines) {
+  console.log('ATI Response', lines);
+}, function(error) {
+  console.error('ATI Command Error', error);
+});
+```
