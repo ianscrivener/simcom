@@ -20,46 +20,13 @@ module.exports = (grunt) ->
 
     coffee:
       options:
-        bare: true
+        bare: false
       lib:
         expand: true
         cwd: 'src/lib/'
         src: ['**/*.coffee']
         dest: 'lib/'
         ext: '.js'
-      test:
-        expand: true
-        cwd: 'src/test/'
-        src: ['**/*.coffee']
-        dest: 'test/'
-        ext: '.js'
-
-    simplemocha:
-      all:
-        src: [
-          'node_modules/should/should.js'
-          'test/**/*.js'
-        ]
-        options:
-          globals: ['should']
-          timeout: 3000
-          ignoreLeaks: false
-          ui: 'bdd'
-          reporter: 'spec'
-
-    mochaTest:
-      spec:
-        options:
-          reporter: 'spec'
-          require: 'coffee-script/register'
-        src: ['test/**/*.coffee']
-      md:
-        options:
-          reporter: 'Markdown'
-          require: 'coffee-script/register'
-          quiet: true
-          captureFile: 'report.md'
-        src: ['test/**/*.coffee']
 
     watch:
       options:
@@ -92,12 +59,7 @@ module.exports = (grunt) ->
     'coffee'
   ]
 
-  grunt.registerTask 'test', [
-    'simplemocha'
-  ]
-
   grunt.registerTask 'default', [
     'compile'
-    'test'
   ]
 
