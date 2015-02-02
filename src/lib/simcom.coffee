@@ -19,7 +19,14 @@ class SimCom
     self = this
     
     # delegates modem events
-    for e in ["open", "close", "error", "ring", "end ring", "over-voltage warnning"]
+    [
+      "open"
+      "close"
+      "error"
+      "ring"
+      "end ring"
+      "over-voltage warnning"
+    ].forEach (e) ->
       self.modem.on e, ->
         args = Array::slice.call(arguments)
         args.unshift e
