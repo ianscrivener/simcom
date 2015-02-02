@@ -1,7 +1,7 @@
 simcom
 ============
 
-Fork of the original module by Wittawas Nakkasem ([https://github.com/vittee/simcom]()).
+Fork of the original module by Wittawas Nakkasem (https://github.com/vittee/simcom).
 
 
 Talk to GSM modem from SIMCOM via serial port using Node
