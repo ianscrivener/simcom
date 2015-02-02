@@ -1,6 +1,9 @@
 simcom
 ============
 
+For of the original module by Wittawas Nakkasem ((https://github.com/vittee/simcom)[]).
+
+
 Talk to GSM modem from SIMCOM via serial port using Node
 --
 This module was written with Raspberry Pi aspect in mind, but it basically should work on all linux distros, it might work on Windows as well (not tested yet), you just need a serial port filesystem (/dev/ttyAMA0 for RPi).
