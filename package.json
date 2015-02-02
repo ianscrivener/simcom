@@ -15,6 +15,16 @@
     "sim800",
     "sim900"
   ],
+  "author": {
+    "name": "Yuri Sementsov",
+    "email": "hello@semencov.com",
+    "url": "http://semencov.com/"
+  },
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https: //gitlab.com/semencov/simcom.git"
+  },
   "licenses": [
     {
       "type": "MIT"
@@ -32,9 +42,9 @@
     "grunt": "~0.4.2"
   },
   "dependencies": {
-    "pdu": ">= 1.1.0",
-    "q": ">=1.0.1",
-    "serialport": ">= 1.1.1",
-    "buffertools": "~2.1.2"
+    "buffertools": "^2.1.2",
+    "pdu": "^1.1.0",
+    "q": "^1.1.2",
+    "serialport": "^1.4.10"
   }
 }
