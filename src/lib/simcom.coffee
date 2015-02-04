@@ -117,7 +117,7 @@ class SimCom
     SimCom::[name] = ->
       defer = Q.defer()
       @execute(simple_methods[name]).then((res) ->
-        res.lines = res.lines.filter (val) -> val?
+        res.lines = res.lines.filter (val) -> val isnt ""
         defer.resolve (if res.lines.length > 1 then res.lines else res.lines.shift())
         return
       ).catch (res) ->
@@ -207,12 +207,14 @@ class SimCom
     else
       @inACall = true
       @invoke "ATD#{number};", (res) ->
-        console.log res
+        callback null, res
 
   # TODO:
   hangUp: (callback) ->
+    self = this
     @invoke "ATH", (res) ->
-      console.log res
+      self.inACall = false
+      callback null, res
 
   listSMS: (stat) ->
     @invoke "AT+CMGL=#{stat}", (res) ->
