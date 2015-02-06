@@ -53,7 +53,7 @@ class Postmaster
   #      Size (in packets) of the buffer
   #    debug
   #      Are we in debug mode?
-  #  
+  #
   constructor:  (myPacketizer, enders, overflow, size, debug) ->
     @packetizer = myPacketizer
     @uart = myPacketizer.uart
@@ -83,13 +83,13 @@ class Postmaster
       #
       #    Wraps message as default start, which means a reply packet
       #    must start with the message to be valid. ex: ['AT']
-      #    
+      #
       
       #
       #    If true, the values of `start` only need to exist within
       #    the incoming data, instead of at the beginning of the packet.
       #    Good for posts with known headers but unknown bodies.
-      #    
+      #
       
       # If true, we are using alternate starts and enders
       
@@ -121,7 +121,7 @@ class Postmaster
       #      +CGATT: 1
       #    are valid responses. By using softContains we can assure that both
       #    are valid enders.
-      #    
+      #
       isDataInStartArraySoft = ->
         starts.softContains data
       
@@ -130,7 +130,7 @@ class Postmaster
       #    if we are busy but the first part of the reply doesn't match the message, or
       #    if we are busy and we are using alternates...
       #    it's unsolicited
-      #    
+      #
       isUnsolicited = ->
         unless hasCallback()
           self._debugPrint "---->>>>>>> Condition 1"
@@ -176,6 +176,7 @@ class Postmaster
         self.RXQueue.push data
         
         #  Check to see of we've finished the post
+        console.log enders.indexOf(data) > -1, data, enders
         if enders.indexOf(data) > -1
           self._debugPrint "\t---> Found " + data + " in enders:\n", enders, "\nEmitting a post with:\n", self.RXQueue
           temp = self.RXQueue
@@ -219,7 +220,7 @@ class Postmaster
   #      Error, if applicable
   #    data
   #      An array of Strings, usually starting with the original call, usually ending with one of 'OK', '>', or 'ERROR'
-  #  
+  #
   send: (message, patience, callback, alternate, debug) ->
     self = this
     self.debug = debug or false
@@ -246,7 +247,7 @@ class Postmaster
       #  If we time out
       panic = setTimeout(->
         self.removeListener "post", onPost
-        err = new Error("no reply after " + patience + " ms to message \"" + message + "\"")
+        err = new Error("no reply after #{patience} ms to message \"#{message}\"")
         err.type = "timeout"
         reply err, []
         self.forceClear()

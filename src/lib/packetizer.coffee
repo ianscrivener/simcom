@@ -8,7 +8,7 @@ EventEmitter = require("events").EventEmitter
 #  args
 #    array
 #      an array-like object of bytes to be interpreted as text
-#  
+#
 decode = (array) ->
   decoded = ""
   i = 0
@@ -35,12 +35,16 @@ decode = (array) ->
 #
 #  return
 #    true/false if the packet should end
-# 
+#
 checkEnd = (message, incoming, ender) ->
   # the slow way:
   # return (message + incoming).indexOf(ender) != -1;
   # the fast way:
   (message + incoming).slice(message.length - ender.length + 1) is ender
+
+
+isResultCode = (line) ->
+  /(^OK|ERROR|BUSY|DATA|NO CARRIER|COMMAND NOT SUPPORT|> $)|(^CONNECT( .+)*$)/i.test line
 
 
 class Packetizer
@@ -54,7 +58,7 @@ class Packetizer
   #      charaters at the end of each packet. typically \r\n or similar.
   #    blacklist
   #      an array of messages you don't care about, ie ['UNDER-VOLTAGE WARNNING']
-  #  
+  #
   constructor: (uart, ender, blacklist, debug) ->
     @debug = debug or false
     @ender = ender or "\n"
@@ -85,7 +89,7 @@ class Packetizer
   #
   #  returns
   #    the size of the buffer after changes, if any
-  #  
+  #
   bufferSize: (len) ->
     @maxBufferSize = len  if arguments.length > 0
     @maxBufferSize
@@ -101,7 +105,7 @@ class Packetizer
   #  returns
   #    packets
   #      an array of the last num packets
-  #  
+  #
   getLatestPackets: (num) ->
     packets = []
     i = 0
@@ -124,7 +128,7 @@ class Packetizer
   #
   #  return value
   #    true if blacklisted, false otherwise
-  #  
+  #
   checkBlacklist: (data) ->
     # console.log('--> checking', data, 'against blacklist...')
     # return this.blacklist.some(function(item) {
@@ -136,6 +140,20 @@ class Packetizer
     self = this
     @uart.on "data", (bytes) ->
       i = 0
+
+      data = decode(bytes)
+        .replace new RegExp("#{self.ender}+", 'g'), "\n"
+        .replace new RegExp("^#{self.ender}|#{self.ender}$", 'g'), ""
+        .split self.ender
+
+      packet = []
+
+      for line in data
+        console.log "line", line, isResultCode(line)
+        if not self.checkBlacklist(line)
+          if isResultCode(line)
+            console.log "---"
+
 
       while i < bytes.length
         thing = decode([bytes[i]])

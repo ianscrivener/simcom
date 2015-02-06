@@ -53,7 +53,15 @@ class SimCom
   @returns Promise
   ###
   execute: (command) ->
-    @modem.execute command
+    return  unless command
+
+    args = [].slice.apply arguments
+    callback = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
+    pdu = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
+    response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
+    timeout = if args.length > 1 and typeof args[-1..][0] is 'number' then args.pop() else null
+
+    @modem.execute command, timeout, response, pdu, callback
 
   parse = (s) ->
     quoted = false
@@ -114,15 +122,21 @@ class SimCom
           timeout: timeout
 
   Object.keys(simple_methods).forEach (name) ->
-    SimCom::[name] = ->
+    SimCom::[name] = (timeout) ->
+      args = [].slice.apply arguments
+      callback = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
+      pdu = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
+      response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
+
       defer = Q.defer()
-      @execute(simple_methods[name]).then((res) ->
-        res.lines = res.lines.filter (val) -> val isnt ""
-        defer.resolve (if res.lines.length > 1 then res.lines else res.lines.shift())
-        return
-      ).catch (res) ->
-        defer.reject res
-        return
+      @execute(simple_methods[name], timeout, response, pdu, callback)
+        .then (res) ->
+          res.lines = res.lines.filter (val) -> val isnt ""
+          defer.resolve (if res.lines.length > 1 then res.lines else res.lines.shift())
+          return
+        .catch (err) ->
+          defer.reject err
+          return
 
       defer.promise
 

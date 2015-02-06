@@ -11,6 +11,7 @@ Licensed under the MIT license.
 'use strict'
 
 util = require("util")
+serialport = require("serialport")
 EventEmitter = require("events").EventEmitter
 Packetizer = require("./packetizer")
 Postmaster = require("./postmaster")
@@ -23,9 +24,9 @@ class SIM900
   #  Args
   #    hardware
   #      The Tessel port to be used for priary communication
-  #  
+  #
   constructor: (device, options={}) ->
-    options.lineEnd = "\r\n"  unless options.lineEnd
+    options.lineEnd = "\n"  unless options.lineEnd
     options.baudrate = 115200  unless options.baudrate
 
     @options = options
@@ -44,51 +45,49 @@ class SIM900
     @isRinging = false
     @isBusy = false
 
-    @packetizer = new Packetizer(@uart)
+    @packetizer = new Packetizer(@uart, @options.lineEnd, ["UNDER-VOLTAGE WARNNING"], true)
     @packetizer.packetize()
     
     #  The defaults are fine for most of Postmaster's args
-    @postmaster = new Postmaster(self.packetizer, ["OK","ERROR","> ","DOWNLOAD"], null, null, DEBUG)
+    @postmaster = new Postmaster(@packetizer, ["OK","ERROR","> ","DOWNLOAD"], null, null, DEBUG)
     
     return
 
   util.inherits SIM900, EventEmitter
 
-  _establishContact: (callback, rep, reps) ->
+  connect: (callback, rep, reps) ->
     self = this
     rep = rep or 0
     reps = reps or 5
     patience = 1000
-    @_txrx "AT", patience, (checkIfWeContacted = (err, data) ->
-      if err and err.type is "timeout" and rep < reps
-        self.togglePower tryAgainAfterToggle = ->
-          self._establishContact callback, rep + 1, reps
-          return
 
-      else unless err
-        self.emit "ready", data
-        callback err, self  if callback
-      else
-        err = new Error("Could not connect to SIM900 Module")
-        setImmediate ->
-          self.emit "error", err
-          return
+    @uart.on 'open', ->
+      self.execute "AT", patience, (err, data) ->
+        unless err
+          self.emit "ready", data
+          callback err, self  if callback
+        else
+          err = new Error("Could not connect to SIM900 Module")
+          setImmediate ->
+            self.emit "error", err
+            return
 
-        callback err, self  if callback
-      return
-    ), [
-      [
-        "AT"
-        "\\x00AT"
-        "\u0000AT"
-        "OK"
+          callback err, self  if callback
+        return
+      , [
+        [
+          "AT"
+          "\\x00AT"
+          "\u0000AT"
+          "OK"
+        ]
+        ["OK"]
+        1
       ]
-      ["OK"]
-      1
-    ]
+      return
     return
 
-  _txrx: (message, patience, callback, alternate) ->
+  execute: (message, patience, callback, alternate) ->
     message = message or "AT"
     patience = patience or 250
     callback = callback or ((err, arg) ->
@@ -105,14 +104,14 @@ class SIM900
 
   answerCall: (callback) ->
     self = this
-    @_txrx "ATA", 10000, (err, data) ->
+    @execute "ATA", 10000, (err, data) ->
       self.inACall = true  unless err
       callback err, data
       return
 
     return
 
-  _chain: (messages, patiences, replies, callback) ->
+  executeBatch: (messages, patiences, replies, callback) ->
     self = this
     if messages.length isnt patiences.length or messages.length isnt replies.length
       callback new Error("Array lengths must match"), false
@@ -142,15 +141,15 @@ class SIM900
 
       if messages.length > 0
         func = (if (messages.length is 1) then callback else _intermediate)
-        console.log "_txrx sending", messages[0]  if DEBUG
-        self._txrx messages[0], patiences[0], func, [
+        console.log "execute sending", messages[0]  if DEBUG
+        self.execute messages[0], patiences[0], func, [
           [replies[0][0]]
           [replies[0][replies[0].length - 1]]
         ]
         if func is _intermediate
           self.once "_intermediate", (correct) ->
             if correct
-              self._chain messages.slice(1), patiences.slice(1), replies.slice(1), callback
+              self.executeBatch messages.slice(1), patiences.slice(1), replies.slice(1), callback
             else
               self.postmaster.forceClear()
               callback new Error("Chain broke on " + messages[0]), false  if callback
@@ -165,7 +164,7 @@ class SIM900
       callback new Error("Did not specify a phone number"), []
     else
       @inACall = true
-      @_txrx "ATD" + number + ";", 1000 * 60 * 60 * 24 * 365, (err, data) ->
+      @execute "ATD" + number + ";", 1000 * 60 * 60 * 24 * 365, (err, data) ->
         @inACall = false
         callback err, data
         return
@@ -174,7 +173,7 @@ class SIM900
 
   hangUp: (callback) ->
     self = this
-    @_txrx "ATH", 100000, (err, data) ->
+    @execute "ATH", 100000, (err, data) ->
       self.inACall = false
       callback err, data
       return
@@ -211,8 +210,8 @@ class SIM900
       remove = 0
     next = next or remove
     self = this
-    @_txrx "AT+CMGR=" + index + "," + mode, 10000, (err, message) ->
-      self._txrx "AT+CMGD=" + index, 10000  if remove is 1
+    @execute "AT+CMGR=" + index + "," + mode, 10000, (err, message) ->
+      self.execute "AT+CMGD=" + index, 10000  if remove is 1
       callback err, message
       return
 
@@ -248,12 +247,12 @@ class SIM900
           "> "
         ]
       ]
-      @_chain commands, patiences, replies, (errr, data) ->
+      @executeBatch commands, patiences, replies, (errr, data) ->
         correct = not errr and data[0] is message and data[1] is "> "
         id = -1
         err = errr or new Error("Unable to send SMS")
         if correct
-          self._txrx new Buffer([0x1a]), 10000, ((err, data) ->
+          self.execute new Buffer([0x1a]), 10000, ((err, data) ->
             if data and data[0] and data[0].indexOf("+CMGS: ") is 0 and data[1] is "OK"
               id = parseInt(data[0].slice(7), 10)
               err = null
@@ -275,28 +274,8 @@ class SIM900
 
     return
 
-  togglePower: (callback) ->
-    self = this
-    debug "toggling power..."
-    self.power.high()
-    setTimeout (->
-      self.power.low()
-      setTimeout (->
-        self.power.high()
-        setTimeout (->
-          self.emit "powerToggled"
-          debug "done toggling power"
-          callback()  if callback
-          return
-        ), 5000
-        return
-      ), 1500
-      return
-    ), 100
-    return
-
-  disable: ->
-    @uart.disable()
+  close: ->
+    @uart.close()
     return
 
 #
@@ -309,10 +288,10 @@ class SIM900
 #    Callback parameters
 #      err
 #        Error, if any, while connecting. Passes null if successful.
-#  
-use = (hardware, callback) ->
-  radio = new SIM900(hardware)
-  radio._establishContact callback
+#
+use = (hardware, options={}, callback=(->)) ->
+  radio = new SIM900(hardware, options)
+  radio.connect callback
   radio
 
 debug = (thing) ->
@@ -320,4 +299,6 @@ debug = (thing) ->
   return
 
 
-module.exports = SIM900
+module.exports.use = use
+module.exports.SIM900 = SIM900
+

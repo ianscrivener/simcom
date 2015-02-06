@@ -7,23 +7,17 @@ EventEmitter = require("events").EventEmitter
 instances = {}
 
 class Modem
-  constructor: (device, options={}) ->
+  constructor: (device, options) ->
+    options = options or {}
     options.lineEnd = "\r\n"  unless options.lineEnd
     options.baudrate = 115200  unless options.baudrate
-
     @options = options
-    @device = device
-    
-    @tty = null
     @opened = false
+    @device = device
+    @port = null
+    @buffer = new Buffer(0)
     @lines = []
     @executions = []
-
-    @isCalling = false
-    @isRinging = false
-    @isBusy = false
-
-    @buffer = new Buffer(0)
     buffertools.extend @buffer
     return
   
@@ -34,21 +28,15 @@ class Modem
     if self.opened
       self.emit "open"
       return
-
     timeout = timeout or 5000
 
-    @tty = new serialport.SerialPort(@device,
+    @port = new serialport.SerialPort(@device,
       baudrate: @options.baudrate
       parser: serialport.parsers.raw
-      # parser: serialport.parsers.readline(@options.lineEnd)
     )
-
-    @tty.on "open", ->
+    
+    @port.on "open", ->
       @on "data", (data) ->
-
-        console.log JSON.stringify(data)
-        return
-
         self.buffer = Buffer.concat([
           self.buffer
           data
@@ -56,14 +44,6 @@ class Modem
 
         readBuffer.call self
         return
-
-      # self.write 'ATI', ->
-      #   console.log "callback:", arguments, typeof arguments[1]
-      #   return
-
-      # self.writeAndWait 'ATI', ->
-      #   console.log "callback:", arguments, typeof arguments[1]
-      #   return
 
       self.execute(command: "AT", timeout: timeout)
         .then ->
@@ -73,15 +53,14 @@ class Modem
           self.emit "error", error
           return
         .done()
-
       return
 
-    @tty.on "close", ->
+    @port.on "close", ->
       self.opened = false
       self.emit "close"
       return
 
-    @tty.on "error", (err) ->
+    @port.on "error", (err) ->
       self.emit "error", err
       return
 
@@ -89,45 +68,25 @@ class Modem
     return
 
   close: ->
-    @tty.close()
-    @tty = null
+    @port.close()
+    @port = null
     instances[@device] = null
-    delete instances[@device]
     return
 
   write: (data, callback) ->
-    @tty.write data, callback
+    @port.write data, callback
     return
 
   writeAndWait: (data, callback) ->
     self = this
     @write data, ->
-      self.tty.drain callback
+      self.port.drain callback
       return
     return
-
-  command: (command) ->  # command, timeout, response, pdu, callback
-    return  unless command
-
-    args = [].slice.apply arguments
-    callback = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
-    pdu = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
-    response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
-    timeout = if args.length > 1 and typeof args[-1..][0] is 'number' then args.pop() else null
-
-    defer = Q.defer()
-    defer.execution =
-      exec: command
-      pdu: pdu
-      timeout: timeout or false
-
-
-    console.log command, timeout, response, pdu, callback
 
   execute: (command) ->
     command = command: String(command)  unless typeof command is "object"
     return  unless command.command
-    
     defer = Q.defer()
     defer.execution =
       exec: command.command
@@ -137,6 +96,42 @@ class Modem
     fetchExecution.call this  if @executions.push(defer) is 1
     defer.promise
 
+  #
+  #    Modem.prototype.execute = function(command) {
+  #      var p = null;
+  #      var timeout;
+  #
+  #      if (typeof command == 'object') {
+  #
+  #        if (command.timeout) {
+  #          timeout = Number(timeout);
+  #        }
+  #
+  #        if (command.defers) {
+  #          defer_times = command.defers || 1;
+  #        }
+  #
+  #        p = command.pdu;
+  #        command = command.command;
+  #
+  #      }
+  #      //
+  #      var defer = Q.defer();
+  #
+  #      defer.command = command.split("\r", 1).shift();
+  #      defer.pdu = p;
+  #      this.defers.push(defer);
+  #      this.write(command + "\r");
+  #
+  #      if (timeout) {
+  #        setTimeout(function() {
+  #          defer.reject(new Error('timed out'));
+  #        }, timeout);
+  #      }
+  #
+  #      return defer.promise;
+  #    }
+  #
   fetchExecution = ->
     defer = @executions[0]
     return  unless defer

@@ -7,17 +7,23 @@ EventEmitter = require("events").EventEmitter
 instances = {}
 
 class Modem
-  constructor: (device, options) ->
-    options = options or {}
+  constructor: (device, options={}) ->
     options.lineEnd = "\r\n"  unless options.lineEnd
     options.baudrate = 115200  unless options.baudrate
+
     @options = options
-    @opened = false
     @device = device
-    @port = null
-    @buffer = new Buffer(0)
+    
+    @tty = null
+    @opened = false
     @lines = []
     @executions = []
+
+    @isCalling = false
+    @isRinging = false
+    @isBusy = false
+
+    @buffer = new Buffer(0)
     buffertools.extend @buffer
     return
   
@@ -28,15 +34,18 @@ class Modem
     if self.opened
       self.emit "open"
       return
+
     timeout = timeout or 5000
 
-    @port = new serialport.SerialPort(@device,
+    @tty = new serialport.SerialPort(@device,
       baudrate: @options.baudrate
       parser: serialport.parsers.raw
+      # parser: serialport.parsers.readline(@options.lineEnd)
     )
-    
-    @port.on "open", ->
+
+    @tty.on "open", ->
       @on "data", (data) ->
+
         self.buffer = Buffer.concat([
           self.buffer
           data
@@ -45,7 +54,7 @@ class Modem
         readBuffer.call self
         return
 
-      self.execute(command: "AT", timeout: timeout)
+      self.execute("AT", timeout)
         .then ->
           self.emit "open"
           return
@@ -53,14 +62,15 @@ class Modem
           self.emit "error", error
           return
         .done()
+
       return
 
-    @port.on "close", ->
+    @tty.on "close", ->
       self.opened = false
       self.emit "close"
       return
 
-    @port.on "error", (err) ->
+    @tty.on "error", (err) ->
       self.emit "error", err
       return
 
@@ -68,70 +78,43 @@ class Modem
     return
 
   close: ->
-    @port.close()
-    @port = null
+    @tty.close()
+    @tty = null
     instances[@device] = null
+    delete instances[@device]
     return
 
   write: (data, callback) ->
-    @port.write data, callback
+    @tty.write data, callback
     return
 
   writeAndWait: (data, callback) ->
     self = this
     @write data, ->
-      self.port.drain callback
+      self.tty.drain callback
       return
     return
 
-  execute: (command) ->
-    command = command: String(command)  unless typeof command is "object"
-    return  unless command.command
+  execute: (command, timeout=false, response, pdu=false, callback) ->  # command, timeout, response, pdu, callback
+    return  unless command
+
+    # args = [].slice.apply arguments
+    # callback = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
+    # pdu = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
+    # response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
+    # timeout = if args.length > 1 and typeof args[-1..][0] is 'number' then args.pop() else null
+
     defer = Q.defer()
     defer.execution =
-      exec: command.command
-      pdu: command.pdu or null
-      timeout: command.timeout or false
+      exec: command
+      response: response
+      callback: callback
+      pdu: pdu
+      timeout: timeout
 
     fetchExecution.call this  if @executions.push(defer) is 1
     defer.promise
 
-  #
-  #    Modem.prototype.execute = function(command) {
-  #      var p = null;
-  #      var timeout;
-  #
-  #      if (typeof command == 'object') {
-  #
-  #        if (command.timeout) {
-  #          timeout = Number(timeout);
-  #        }
-  #
-  #        if (command.defers) {
-  #          defer_times = command.defers || 1;
-  #        }
-  #
-  #        p = command.pdu;
-  #        command = command.command;
-  #
-  #      }
-  #      //
-  #      var defer = Q.defer();
-  #
-  #      defer.command = command.split("\r", 1).shift();
-  #      defer.pdu = p;
-  #      this.defers.push(defer);
-  #      this.write(command + "\r");
-  #
-  #      if (timeout) {
-  #        setTimeout(function() {
-  #          defer.reject(new Error('timed out'));
-  #        }, timeout);
-  #      }
-  #
-  #      return defer.promise;
-  #    }
-  #
   fetchExecution = ->
     defer = @executions[0]
     return  unless defer
@@ -180,8 +163,8 @@ class Modem
     return  if processUnboundLine.call(this, line)
     
     # special handling for ring
-    if @ringing and line is "NO CARRIER"
-      @ringing = false
+    if @isRinging and line is "NO CARRIER"
+      @isRinging = false
       @emit "end ring"
       return
     @lines.push line
@@ -203,6 +186,8 @@ class Modem
     responseCode = @lines.pop()
     defer = @executions[0]
     execution = defer and defer.execution
+    cmd = execution.exec.split("\r", 1).shift()
+
     if responseCode is "> "
       if execution and execution.pdu
         pduSize = execution.pdu.length
@@ -218,21 +203,31 @@ class Modem
         execution.pdu = null
       return
     if defer
-      cmd = execution.exec.split("\r", 1).shift()
       @executions.shift()
-      if defer.timer
-        clearTimeout defer.timer
-        defer.timer = null
-      if responseCode in ["ERROR", "COMMAND NOT SUPPORT"]
-        defer.reject
-          code: responseCode
-          command: cmd
 
-        return
-      defer.resolve
+      response =
         code: responseCode
         command: cmd
         lines: @lines
+
+      response.success = responseCode.match(new RegExp("^#{execution.response}$", 'i'))?  if execution.response
+
+      if defer.timer
+        clearTimeout defer.timer
+        defer.timer = null
+
+      if responseCode in ["ERROR", "COMMAND NOT SUPPORT"]
+        execution.callback?(new Error("Responsed Error: '#{responseCode}'"), null)
+        defer.reject response
+        return
+      
+      if typeof response['success'] isnt 'undefined' and not response['success']
+        execution.callback?(new Error("Missed the awaited response. Response was: #{responseCode}"), null)
+        defer.reject response
+        return
+
+      execution.callback?(null, response)
+      defer.resolve response
 
     fetchExecution.call this  if @executions.length
     return
@@ -247,7 +242,7 @@ class Modem
     {
       expr: /^RING$/i
       func: (m) ->
-        @ringing = true
+        @isRinging = true
         @emit "ring"
         return
     }
