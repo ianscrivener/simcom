@@ -27,6 +27,19 @@ tty.on('open', function() {
 var server = restify.createServer({ name: 'my-api' });
 server.use(restify.fullResponse()).use(restify.bodyParser());
 
-server.get('/status', function (req, res, next) {
+server.listen(3000, function() {
+  console.log('%s listening at %s', server.name, server.url)
+});
 
+server.get('/:cmd', function (req, res, next) {
+  var cmd = req.params.cmd;
+
+  if (typeof tty[cmd] === 'function') {
+    tty[cmd](function(error, result) {
+      if (error)
+        return next(new restify.InvalidArgumentError(JSON.stringify(error)))
+
+      res.send(result);
+    });
+  }
 });
