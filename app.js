@@ -34,9 +34,10 @@ server.get('/:cmd', function (req, res, next) {
   var cmd = req.params.cmd;
 
   if (!!cmd && typeof tty[cmd] === 'function') {
-    tty[cmd](function(result) {
-
+    tty[cmd]().then(function(result) {
       res.send(result || null);
+    }).catch(function(error){
+      return next(new restify.InvalidArgumentError(JSON.stringify(error)))
     });
   }
 });
