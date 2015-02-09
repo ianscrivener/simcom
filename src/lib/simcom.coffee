@@ -216,8 +216,8 @@ class SimCom
   # TODO:
   answerCall: (callback) ->
     @invoke "ATA", true, (lines=[]) ->
-      console.log lines
-      lines
+      self.inACall = false
+      callback?(lines) or lines
 
 
   # TODO:
@@ -238,19 +238,17 @@ class SimCom
       self.inACall = false
       callback?(lines) or lines
 
-  listSMS: (stat) ->
-    @invoke "AT+CMGL=#{stat}", (res) ->
-      res.map (m) ->
+  listSMS: (stat="ALL") ->
+    @invoke "AT+CMGL=#{stat}", true, (lines=[]) ->
+      lines.map (m) ->
         infos = parse(m.response)
         index: Number(infos[0])
         stat: infos[1]
         message: pdu.parse(m.pdu)
-    , true
 
   readSMS: (index, peek) ->
-    @invoke "AT+CMGR=#{index}" + (if peek then 0 else 1), (res) ->
-      pdu.parse res.shift().pdu
-    , true
+    @invoke "AT+CMGR=#{index}" + (if peek then 0 else 1), true, (lines=[]) ->
+      pdu.parse lines.shift()?.pdu
 
   sendSMS: (receiver, text) ->
     p = pdu.generate(encoding: "16bit", receiver: receiver, text: text).shift()
