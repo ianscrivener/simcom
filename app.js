@@ -36,7 +36,7 @@ server.get('/:cmd', function (req, res, next) {
   if (!!cmd && typeof tty[cmd] === 'function') {
     tty[cmd](function(result) {
 
-      res.send(result);
+      res.send(result || null);
     });
   }
 });
