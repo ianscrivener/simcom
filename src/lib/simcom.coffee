@@ -233,9 +233,9 @@ class SimCom
   # TODO:
   hangUp: (callback) ->
     self = this
-    @invoke "ATH", (res) ->
+    @invoke "ATH", (lines=[]) ->
       self.inACall = false
-      callback null, res
+      callback?(null, lines) or lines
 
   listSMS: (stat) ->
     @invoke "AT+CMGL=#{stat}", (res) ->
