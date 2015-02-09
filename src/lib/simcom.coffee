@@ -215,9 +215,10 @@ class SimCom
 
   # TODO:
   answerCall: (callback) ->
-    @invoke "ATA", (res) ->
-      console.log res
-    , true
+    @invoke "ATA", true, (lines=[]) ->
+      console.log lines
+      lines
+
 
   # TODO:
   dialNumber: (number, callback) ->
