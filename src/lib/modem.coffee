@@ -54,7 +54,8 @@ class Modem
         readBuffer.call self
         return
 
-      self.execute("AT", timeout)
+      self
+        .execute "AT", timeout
         .then ->
           self.emit "open"
           return
@@ -122,7 +123,7 @@ class Modem
     @write "#{execution.exec}\r"
     if execution.timeout
       defer.timer = setTimeout ->
-        defer.reject new Error("timed out")
+        defer.reject new Error("Command '#{execution.exec}' failed by timed out")
         return
       , execution.timeout
     return
