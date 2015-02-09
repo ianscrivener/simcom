@@ -98,11 +98,11 @@ class Modem
   execute: (command, timeout=false, response, pdu=false, callback) ->  # command, timeout, response, pdu, callback
     return  unless command
 
-    # args = [].slice.apply arguments
-    # callback = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
-    # pdu = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
-    # response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
-    # timeout = if args.length > 1 and typeof args[-1..][0] is 'number' then args.pop() else null
+    args = [].slice.apply arguments
+    callback = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
+    pdu = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
+    response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
+    timeout = if args.length > 1 and typeof args[-1..][0] is 'number' then args.pop() else 5000
 
     defer = Q.defer()
     defer.execution =
@@ -172,7 +172,10 @@ class Modem
     return
 
   isResultCode = (line) ->
-    /(^OK|ERROR|BUSY|DATA|NO CARRIER|COMMAND NOT SUPPORT|> $)|(^CONNECT( .+)*$)/i.test line
+    /(^OK|ERROR|BUSY|DATA|NO CARRIER|COMMAND NOT SUPPORT|\+CME|> $)|(^CONNECT( .+)*$)/i.test line
+
+  isErrorCode = (line) ->
+    /^(\+CME\s)?ERROR(\:.*)?|NO CARRIER|COMMAND NOT SUPPORT$/i.test line
 
   processLines = ->
     return  unless @lines.length
@@ -216,7 +219,7 @@ class Modem
         clearTimeout defer.timer
         defer.timer = null
 
-      if responseCode in ["ERROR", "COMMAND NOT SUPPORT"]
+      if isErrorCode responseCode
         execution.callback?(new Error("Responsed Error: '#{responseCode}'"), null)
         defer.reject response
         return
