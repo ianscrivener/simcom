@@ -66,16 +66,7 @@ class SimCom
       args.unshift simple_methods[name]
 
       defer = Q.defer()
-      @execute.apply(self, args)
-        .then (res) ->
-          res.lines = res.lines.filter (val) -> val isnt ""
-          defer.resolve (if res.lines.length > 1 then res.lines else res.lines.shift())
-          return
-        .catch (err) ->
-          defer.reject err
-          return
-
-      defer.promise
+      self.invoke.apply(self, args)
 
     return
 
@@ -147,15 +138,14 @@ class SimCom
             if tokens and tokens.length > 2
               line = tokens[2]
               cmdMatched = true
-        if cmdMatched
-          if line
-            unless readPDU
-              result.push line
-            else
-              pduResponse =
-                response: line
-                pdu: null
-          needPDU = readPDU
+        if line?
+          unless readPDU
+            result.push line
+          else
+            pduResponse =
+              response: line
+              pdu: null
+        needPDU = readPDU
       else
         pduResponse.pdu = line
         result.push pduResponse
@@ -175,7 +165,7 @@ class SimCom
     self = this
 
     args = [].slice.apply arguments
-    resultReader = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else (->)
+    resultReader = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
     readPDU = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
     response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
     timeout = if args.length > 1 and typeof args[-1..][0] is 'number' then args.pop() else 5000
@@ -183,6 +173,7 @@ class SimCom
     @execute command, timeout, (error, res) ->
       return defer.reject(error)  if error
 
+      console.log command, error, res
       result = SimCom.extractResponse(res, readPDU) or null
       result = resultReader.call(self, result)  if resultReader
       defer.resolve result

@@ -46,6 +46,8 @@ class Modem
     @tty.on "open", ->
       @on "data", (data) ->
 
+        # console.log "onData", data.toString("ascii")
+
         self.buffer = Buffer.concat([
           self.buffer
           data
@@ -221,7 +223,7 @@ class Modem
         defer.timer = null
 
       if isErrorCode responseCode
-        execution.callback?(new Error("Responsed Error: '#{responseCode}'"), null)
+        execution.callback?(new Error("#{cmd} Responsed Error: '#{responseCode}'"), null)
         defer.reject response
         return
       

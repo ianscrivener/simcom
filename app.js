@@ -6,8 +6,11 @@ tty.on('open', function() {
   console.log("ready");
   //  Give it 10 more seconds to connect to the network, then try to send an SMS 
    
-  tty.tryConnectOperator().then(function(res) {
-    console.log("getServiceProvider2", res);
+  tty.switchErrorTextMode().then(function(res){
+    console.log("switchErrorTextMode", res);
+    tty.getImei(function(lines){return lines.shift()});
+  }).then(function(res) {
+    console.log("getImei", res);
     tty.getLastError();
   }).then(function(res) {
     console.log("getLastError", res);
@@ -16,10 +19,6 @@ tty.on('open', function() {
   }).done(function(res) {
     console.log("done", res);
 
-  });
-
-  tty.tryConnectOperator(function(err, res){
-    console.log(err, res);
   });
 
 });
@@ -34,10 +33,8 @@ server.listen(3000, function() {
 server.get('/:cmd', function (req, res, next) {
   var cmd = req.params.cmd;
 
-  if (typeof tty[cmd] === 'function') {
-    tty[cmd](function(error, result) {
-      if (error)
-        return next(new restify.InvalidArgumentError(JSON.stringify(error)))
+  if (!!cmd && typeof tty[cmd] === 'function') {
+    tty[cmd](function(result) {
 
       res.send(result);
     });
