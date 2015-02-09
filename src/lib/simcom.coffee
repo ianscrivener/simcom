@@ -235,7 +235,7 @@ class SimCom
     self = this
     @invoke "ATH", (lines=[]) ->
       self.inACall = false
-      callback?(null, lines) or lines
+      callback?(lines) or lines
 
   listSMS: (stat) ->
     @invoke "AT+CMGL=#{stat}", (res) ->
