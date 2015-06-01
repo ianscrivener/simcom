@@ -4,10 +4,10 @@ pdu = require("pdu")
 EventEmitter = require("events").EventEmitter
 
 simple_methods =
-  getProductId      : "ATI"
-  getManufacturerId : "AT+GMI"
-  getModelId        : "AT+GMM"
-  getImei           : "AT+GSN"
+  getProductID      : "ATI"
+  getManufacturerID : "AT+GMI"
+  getModelID        : "AT+GMM"
+  getIMEI           : "AT+GSN"
 
 
 
@@ -27,10 +27,10 @@ class SimCom
       "error"
       "ring"
       "end ring"
+      "end call"
       "over-voltage warnning"
     ].forEach (e) ->
-      self.modem.on e, ->
-        args = Array::slice.call(arguments)
+      self.modem.on e, (args...) ->
         args.unshift e
         self.emit.apply self, args
         return
@@ -59,16 +59,21 @@ class SimCom
     args = Array::slice.call(arguments)
     @modem.execute.apply @modem, args
 
-  Object.keys(simple_methods).forEach (name) ->
-    SimCom::[name] = ->
-      self = this
-      args = Array::slice.call(arguments)
-      args.unshift simple_methods[name]
+  # Object.keys(simple_methods).forEach (name) ->
+  #   SimCom::[name] = ->
+  #     self = this
+  #     args = Array::slice.call(arguments)
+  #     args.unshift simple_methods[name]
 
-      defer = Q.defer()
-      self.invoke.apply(self, args)
+  #     defer = Q.defer()
+  #     self.invoke.apply(self, args)
 
-    return
+  #   return
+
+  date = (s) ->
+    s = String(s).replace /^(\d{2})\/(\d{2})\/(\d{2})\,(\d{2})\:(\d{2})\:(\d{2})\+(\d{2})$/, (m...) ->
+      "20#{m[1]}-#{m[2]}-#{m[3]}T#{m[4]}:#{m[5]}:#{m[6]}+0#{(m[7]/4)}00"
+    new Date s
 
   parse = (s) ->
     quoted = false
@@ -94,13 +99,15 @@ class SimCom
     items
 
   handleNewMessage = (m) ->
-    m = parse(m)
+    self = this
+    m = parse(m).map (e) -> e.trim()
     m =
       storage: m[0]
       index: Number(m[1])
       type: (if m.length > 2 then m[2] else "SMS")
 
-    @emit "new message", m
+    @readSMS(m.index).done (res) -> self.emit "new message", res, m
+  
     return
 
   handleUSSD = (m) ->
@@ -160,104 +167,180 @@ class SimCom
   @param readPDU Try to read PDU from responses
   @returns Promise
   ###
-  invoke: (command) ->
+  invoke: (command, args...) ->
+    return   unless command?
     defer = Q.defer()
     self = this
 
-    args = [].slice.apply arguments
-    resultReader = if args.length > 1 and typeof args[-1..][0] is 'function' then args.pop() else null
-    readPDU = if args.length > 1 and typeof args[-1..][0] is 'boolean' then args.pop() else null
-    response = if args.length > 1 and typeof args[-1..][0] is 'string' then args.pop() else null
-    timeout = if args.length > 1 and typeof args[-1..][0] is 'number' then args.pop() else 5000
+    resultReader = if typeof args[-1..][0] is 'function' then args.pop() else null
+    readPDU = if typeof args[-1..][0] in ['boolean','object'] then args.pop() else false
+    response = if typeof args[-1..][0] is 'string' then args.pop() else null
+    timeout = if typeof args[-1..][0] is 'number' then args.pop() else null
 
-    @execute command, timeout, (error, res) ->
+    @execute command, timeout, response, readPDU, (error, res) ->
       return defer.reject(error)  if error
 
-      console.log command, error, res
       result = SimCom.extractResponse(res, readPDU) or null
       result = resultReader.call(self, result)  if resultReader
+      result = if Array.isArray result and result.length is 1 then result.shift() else result
       defer.resolve result
       return
     defer.promise
 
   
   tryConnectOperator: ->
-    @invoke "AT+COPS=0", 60000, (lines=[]) ->
-      lines.shift()
+    @execute "AT+COPS=0", 60000, 'OK'
 
-  switchErrorTextMode: ->
-    @invoke "AT+CEER=0", (lines=[]) ->
-      lines.shift()
+  # Reset to the factory settings
+  setFactoryDefaults: ->
+    @execute "AT&F", 10000, 'OK'
 
+  # switch off echo
+  setEchoOff: ->
+    @execute "ATE0", 2000, 'OK'
+
+  # switch off echo
+  setVolume: (level=5) ->
+    @execute "AT+CLVL=#{level}", 2000, 'OK'
+
+  # set the SMS mode to text
+  setSmsTextMode: ->
+    @execute "AT+CMGF=1", 2000, 'OK'
+
+  setErrorTextMode: ->
+    @execute "AT+CEER=0", 2000, 'OK'
+
+  setCallPresentation: ->
+    @execute "AT+COLP=1", 2000, 'OK'
 
   getLastError: ->
     @invoke "AT+CEER", (lines=[]) ->
+      "test=" + lines.shift()
+
+  getProductID: ->
+    @invoke "ATI", (lines=[]) ->
+      lines.shift()
+
+  getManufacturerID: ->
+    @invoke "AT+GMI", (lines=[]) ->
+      lines.shift()
+
+  getModelID: ->
+    @invoke "AT+GMM", (lines=[]) ->
+      lines.shift()
+
+  getIMEI: ->
+    @invoke "AT+GSN", (lines=[]) ->
       lines.shift()
 
   getServiceProvider: ->
     @invoke "AT+CSPN?", (lines=[]) ->
       lines.shift()?.match(/"([^"]*)"/)?.pop()
 
-  # TODO:
-  getServiceProvider2: ->
-    @invoke "AT+COPS?", (lines=[]) ->
-      lines.shift()?.match(/"([^"]*)"/)?.pop()
-
-  # TODO:
   getSignalQuality: ->
     @invoke "AT+CSQ", (lines=[]) ->
-      lines.shift()?.match(/(\d{1,2}),(\d)"/)?.pop()
+      signal = lines.shift()?.match(/(\d+),(\d+)/)?[1]
+      signal = parseInt(signal)
+      signalWord = switch
+        when signal < 10 then "marginal"
+        when signal < 15 then "ok"
+        when signal < 20 then "good"
+        when signal < 30 then "excellent"
+        else "unknown"
 
-  # TODO:
+      signal = -1 * (113 - (signal*2))
+      [signal, signalWord]
+
   getRegistrationStatus: ->
+    statuses = [
+      "not registered"
+      "registered, home network"
+      "searching"
+      "registration denied"
+      "unknown"
+      "registered, roaming"
+      "registered, sms only, home network"
+      "registered, sms only, roaming"
+      "emergency services only"
+      "registered, csfb not preferred, home network"
+      "registered, csfb not preferred, roaming"
+    ]
+
     @invoke "AT+CREG?", (lines=[]) ->
-      lines.shift()?.match(/(\d{1,2}),(\d)"/)?.pop()
+      status = lines.shift()?.match(/(\d+),(\d+)/)?[1]
+      statuses[status]
+
+
+  getPhoneNumber: ->
+    @invoke "AT+CNUM", (lines=[]) ->
+      lines.shift()?.match(/,"([^"]*)"/)?.pop()
 
   # TODO:
   answerCall: (callback) ->
+    self = this
     @invoke "ATA", true, (lines=[]) ->
-      self.inACall = false
+      self.isCalling = false
       callback?(lines) or lines
 
 
   # TODO:
   dialNumber: (number, callback) ->
-    if @inACall
-      callback new Error("Currently in a call"), []
+    self = this
+
+    if @modem.isCalling
+      callback new Error("Currently in a call"), null
     else if not number or not String(number).length
-      callback new Error("Did not specify a phone number"), []
+      callback new Error("Did not specified a phone number"), null
     else
-      @inACall = true
-      @invoke "ATD#{number};", (res) ->
-        callback null, res
+      @modem.isCalling = true
+      @execute "ATD#{number};", 5000, 'OK', (err, res) ->
+        self.modem.isCalling = false  if err?
+        callback err, res
+        return
+    return
 
   # TODO:
   hangUp: (callback) ->
     self = this
-    @invoke "ATH", (lines=[]) ->
-      self.inACall = false
-      callback?(lines) or lines
+    @execute "ATH", 'OK', (err, res) ->
+      if not err and res.success
+        self.modem.isCalling = false
+        self.modem.isRinging = false
+      callback err, res
+    return
 
   listSMS: (stat="ALL") ->
-    @invoke "AT+CMGL=#{stat}", true, (lines=[]) ->
+    @invoke "AT+CMGL=\"#{stat}\"", true, (lines=[]) ->
       lines.map (m) ->
         infos = parse(m.response)
         index: Number(infos[0])
         stat: infos[1]
-        message: pdu.parse(m.pdu)
+        from: infos[2]
+        time: date infos[4]
+        message: m.pdu
 
-  readSMS: (index, peek) ->
-    @invoke "AT+CMGR=#{index}" + (if peek then 0 else 1), true, (lines=[]) ->
-      pdu.parse lines.shift()?.pdu
+  readSMS: (index) ->
+    @invoke "AT+CMGR=#{index}", true, (lines=[]) ->
+      result = lines.shift()
+      message = result.pdu
+      m = parse(result.response)
 
-  sendSMS: (receiver, text) ->
-    p = pdu.generate(encoding: "16bit", receiver: receiver, text: text).shift()
-    pduLength = (p.length / 2) - 1
-    @invoke
-      command: "AT+CMGS=#{pduLength}"
-      pdu: p
-    , (res) ->
-      res.shift()
+      {
+        index: Number(index)
+        stat: m[0]
+        from: m[1]
+        time: date m[3]
+        message: message
+      }
+
+  deleteSMS: (index, callback) ->
+    @invoke "AT+CMGD=#{index}", 10000, 'OK', true, callback
+
+  deleteAllSMS: (callback) ->
+    @invoke "AT+CMGD=0,4", 30000, 'OK', true, callback
+
+  sendSMS: (number, message='ping!', callback) ->
+    @execute "AT+CMGS=\"#{number}\"\r#{message}", 10000, callback
 
   setBearerParam: (id, tag, value) ->
     @invoke "AT+SAPBR=3,#{id},\"#{tag}\",\"#{value}\""
