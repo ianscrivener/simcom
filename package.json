@@ -45,6 +45,6 @@
     "buffertools": "^2.1.2",
     "pdu": "^1.1.0",
     "q": "^1.1.2",
-    "serialport": "^1.4.10"
+    "serialport": "^2.0.0"
   }
 }
