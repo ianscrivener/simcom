@@ -1,6 +1,6 @@
 {
   "name": "simcom",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "main": "index.js",
   "description": "",
   "keywords": [
@@ -23,7 +23,7 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https: //gitlab.com/semencov/simcom.git"
+    "url": "https://gitlab.com/semencov/simcom.git"
   },
   "licenses": [
     {
