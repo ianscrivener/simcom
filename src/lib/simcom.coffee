@@ -4,17 +4,19 @@ pdu = require("pdu")
 EventEmitter = require("events").EventEmitter
 
 simple_methods =
-  productID      : "ATI"
-  manufacturerID : "AT+GMI"
-  modelID        : "AT+GMM"
-  globalID       : "AT+GOI"
-  IMEI           : "AT+GSN"
-  subscriberID   : "AT+CIMI"
+  getProductID      : "ATI"
+  getManufacturerID : "AT+GMI"
+  getModelID        : "AT+GMM"
+  getIMEI           : "AT+GSN"
 
 
 
 class SimCom
   constructor: (device, options) ->
+    @isCalling = false
+    @isRinging = false
+    @isBusy = false
+
     @modem = require("./modem")(device, options)
     self = this
     
@@ -25,10 +27,10 @@ class SimCom
       "error"
       "ring"
       "end ring"
+      "end call"
       "over-voltage warnning"
     ].forEach (e) ->
-      self.modem.on e, ->
-        args = Array::slice.call(arguments)
+      self.modem.on e, (args...) ->
         args.unshift e
         self.emit.apply self, args
         return
@@ -53,7 +55,25 @@ class SimCom
   @returns Promise
   ###
   execute: (command) ->
-    @modem.execute command
+    return  unless command
+    args = Array::slice.call(arguments)
+    @modem.execute.apply @modem, args
+
+  # Object.keys(simple_methods).forEach (name) ->
+  #   SimCom::[name] = ->
+  #     self = this
+  #     args = Array::slice.call(arguments)
+  #     args.unshift simple_methods[name]
+
+  #     defer = Q.defer()
+  #     self.invoke.apply(self, args)
+
+  #   return
+
+  date = (s) ->
+    s = String(s).replace /^(\d{2})\/(\d{2})\/(\d{2})\,(\d{2})\:(\d{2})\:(\d{2})\+(\d{2})$/, (m...) ->
+      "20#{m[1]}-#{m[2]}-#{m[3]}T#{m[4]}:#{m[5]}:#{m[6]}+0#{(m[7]/4)}00"
+    new Date s
 
   parse = (s) ->
     quoted = false
@@ -79,13 +99,15 @@ class SimCom
     items
 
   handleNewMessage = (m) ->
-    m = parse(m)
+    self = this
+    m = parse(m).map (e) -> e.trim()
     m =
       storage: m[0]
       index: Number(m[1])
       type: (if m.length > 2 then m[2] else "SMS")
 
-    @emit "new message", m
+    @readSMS(m.index).done (res) -> self.emit "new message", res, m
+  
     return
 
   handleUSSD = (m) ->
@@ -99,35 +121,6 @@ class SimCom
     @emit "ussd", m
     return
 
-  downloadMMS = (type, data, name) ->
-    throw new Error("Invalid MMS Download Type")  unless /^(PIC|TEXT|TITLE)$/i.test(type)
-    if data and data.length
-      type = type.toUpperCase()
-      timeout = Math.max(200000, Math.ceil(data.length / @modem.options.baudrate * 1000 * 8))
-      param = "\"" + type + "\"," + data.length + "," + timeout
-      param += ",\"" + name + "\""  if name
-      self = this
-      self.invoke("ATE1").then ->
-        self.invoke
-          command: "AT+CMMSDOWN=#{param}"
-          pdu: data
-          timeout: timeout
-
-  Object.keys(simple_methods).forEach (name) ->
-    SimCom::[name] = ->
-      defer = Q.defer()
-      @execute(simple_methods[name]).then((res) ->
-        res.lines = res.lines.filter (val) -> val?
-        defer.resolve (if res.lines.length > 1 then res.lines else res.lines.shift())
-        return
-      ).catch (res) ->
-        defer.reject res
-        return
-
-      defer.promise
-
-    return
-
   @extractResponse = @::extractResponse = (resp, readPDU) ->
     return  if not resp or not resp.command or not resp.lines or not resp.lines.length
     cmd = resp.command.match(/^AT([^\=\?]*)/)
@@ -139,11 +132,12 @@ class SimCom
     cmdMatched = false
     i = 0
 
-    while i < resp.lines.length
-      line = resp.lines[i]
+
+    for line in resp.lines
       if line is ""
         cmdMatched = false
         continue
+
       unless needPDU
         unless cmdMatched
           if line.substr(0, cmd.length) is cmd
@@ -151,20 +145,19 @@ class SimCom
             if tokens and tokens.length > 2
               line = tokens[2]
               cmdMatched = true
-        if cmdMatched
-          if line
-            unless readPDU
-              result.push line
-            else
-              pduResponse =
-                response: line
-                pdu: null
-          needPDU = readPDU
+        if line?
+          unless readPDU
+            result.push line
+          else
+            pduResponse =
+              response: line
+              pdu: null
+        needPDU = readPDU
       else
         pduResponse.pdu = line
         result.push pduResponse
         needPDU = false
-      i++
+
     result
 
   ###*
@@ -174,68 +167,180 @@ class SimCom
   @param readPDU Try to read PDU from responses
   @returns Promise
   ###
-  invoke: (command, resultReader, readPDU) ->
+  invoke: (command, args...) ->
+    return   unless command?
     defer = Q.defer()
     self = this
-    @execute(command)
-      .then (res) ->
-        result = SimCom.extractResponse(res, readPDU) or null
-        result = resultReader.call(self, result)  if resultReader
-        defer.resolve result
-        return
-      .catch (error) ->
-        defer.reject error
-        return
+
+    resultReader = if typeof args[-1..][0] is 'function' then args.pop() else null
+    readPDU = if typeof args[-1..][0] in ['boolean','object'] then args.pop() else false
+    response = if typeof args[-1..][0] is 'string' then args.pop() else null
+    timeout = if typeof args[-1..][0] is 'number' then args.pop() else null
+
+    @execute command, timeout, response, readPDU, (error, res) ->
+      return defer.reject(error)  if error
+
+      result = SimCom.extractResponse(res, readPDU) or null
+      result = resultReader.call(self, result)  if resultReader
+      result = if Array.isArray result and result.length is 1 then result.shift() else result
+      defer.resolve result
+      return
     defer.promise
 
-  serviceProvider: ->
+  
+  tryConnectOperator: ->
+    @execute "AT+COPS=0", 60000, 'OK'
+
+  # Reset to the factory settings
+  setFactoryDefaults: ->
+    @execute "AT&F", 10000, 'OK'
+
+  # switch off echo
+  setEchoOff: ->
+    @execute "ATE0", 2000, 'OK'
+
+  # switch off echo
+  setVolume: (level=5) ->
+    @execute "AT+CLVL=#{level}", 2000, 'OK'
+
+  # set the SMS mode to text
+  setSmsTextMode: ->
+    @execute "AT+CMGF=1", 2000, 'OK'
+
+  setErrorTextMode: ->
+    @execute "AT+CEER=0", 2000, 'OK'
+
+  setCallPresentation: ->
+    @execute "AT+COLP=1", 2000, 'OK'
+
+  getLastError: ->
+    @invoke "AT+CEER", (lines=[]) ->
+      "test=" + lines.shift()
+
+  getProductID: ->
+    @invoke "ATI", (lines=[]) ->
+      lines.shift()
+
+  getManufacturerID: ->
+    @invoke "AT+GMI", (lines=[]) ->
+      lines.shift()
+
+  getModelID: ->
+    @invoke "AT+GMM", (lines=[]) ->
+      lines.shift()
+
+  getIMEI: ->
+    @invoke "AT+GSN", (lines=[]) ->
+      lines.shift()
+
+  getServiceProvider: ->
     @invoke "AT+CSPN?", (lines=[]) ->
-      lines.shift().match(/"([^"]*)"/).pop()
+      lines.shift()?.match(/"([^"]*)"/)?.pop()
+
+  getSignalQuality: ->
+    @invoke "AT+CSQ", (lines=[]) ->
+      signal = lines.shift()?.match(/(\d+),(\d+)/)?[1]
+      signal = parseInt(signal)
+      signalWord = switch
+        when signal < 10 then "marginal"
+        when signal < 15 then "ok"
+        when signal < 20 then "good"
+        when signal < 30 then "excellent"
+        else "unknown"
+
+      signal = -1 * (113 - (signal*2))
+      [signal, signalWord]
+
+  getRegistrationStatus: ->
+    statuses = [
+      "not registered"
+      "registered, home network"
+      "searching"
+      "registration denied"
+      "unknown"
+      "registered, roaming"
+      "registered, sms only, home network"
+      "registered, sms only, roaming"
+      "emergency services only"
+      "registered, csfb not preferred, home network"
+      "registered, csfb not preferred, roaming"
+    ]
+
+    @invoke "AT+CREG?", (lines=[]) ->
+      status = lines.shift()?.match(/(\d+),(\d+)/)?[1]
+      statuses[status]
+
+
+  getPhoneNumber: ->
+    @invoke "AT+CNUM", (lines=[]) ->
+      lines.shift()?.match(/,"([^"]*)"/)?.pop()
 
   # TODO:
   answerCall: (callback) ->
-    @invoke "ATA", (res) ->
-      console.log res
-    , true
+    self = this
+    @invoke "ATA", true, (lines=[]) ->
+      self.isCalling = false
+      callback?(lines) or lines
+
 
   # TODO:
-  dial: (number, callback) ->
-    if @inACall
-      callback new Error("Currently in a call"), []
+  dialNumber: (number, callback) ->
+    self = this
+
+    if @modem.isCalling
+      callback new Error("Currently in a call"), null
     else if not number or not String(number).length
-      callback new Error("Did not specify a phone number"), []
+      callback new Error("Did not specified a phone number"), null
     else
-      @inACall = true
-      @invoke "ATD#{number};", (res) ->
-        console.log res
+      @modem.isCalling = true
+      @execute "ATD#{number};", 5000, 'OK', (err, res) ->
+        self.modem.isCalling = false  if err?
+        callback err, res
+        return
+    return
 
   # TODO:
   hangUp: (callback) ->
-    @invoke "ATH", (res) ->
-      console.log res
+    self = this
+    @execute "ATH", 'OK', (err, res) ->
+      if not err and res.success
+        self.modem.isCalling = false
+        self.modem.isRinging = false
+      callback err, res
+    return
 
-  listSMS: (stat) ->
-    @invoke "AT+CMGL=#{stat}", (res) ->
-      res.map (m) ->
+  listSMS: (stat="ALL") ->
+    @invoke "AT+CMGL=\"#{stat}\"", true, (lines=[]) ->
+      lines.map (m) ->
         infos = parse(m.response)
         index: Number(infos[0])
         stat: infos[1]
-        message: pdu.parse(m.pdu)
-    , true
+        from: infos[2]
+        time: date infos[4]
+        message: m.pdu
 
-  readSMS: (index, peek) ->
-    @invoke "AT+CMGR=#{index}" + (if peek then 0 else 1), (res) ->
-      pdu.parse res.shift().pdu
-    , true
+  readSMS: (index) ->
+    @invoke "AT+CMGR=#{index}", true, (lines=[]) ->
+      result = lines.shift()
+      message = result.pdu
+      m = parse(result.response)
 
-  sendSMS: (receiver, text) ->
-    p = pdu.generate(encoding: "16bit", receiver: receiver, text: text).shift()
-    pduLength = (p.length / 2) - 1
-    @invoke
-      command: "AT+CMGS=#{pduLength}"
-      pdu: p
-    , (res) ->
-      res.shift()
+      {
+        index: Number(index)
+        stat: m[0]
+        from: m[1]
+        time: date m[3]
+        message: message
+      }
+
+  deleteSMS: (index, callback) ->
+    @invoke "AT+CMGD=#{index}", 10000, 'OK', true, callback
+
+  deleteAllSMS: (callback) ->
+    @invoke "AT+CMGD=0,4", 30000, 'OK', true, callback
+
+  sendSMS: (number, message='ping!', callback) ->
+    @execute "AT+CMGS=\"#{number}\"\r#{message}", 10000, callback
 
   setBearerParam: (id, tag, value) ->
     @invoke "AT+SAPBR=3,#{id},\"#{tag}\",\"#{value}\""
@@ -280,82 +385,10 @@ class SimCom
       status: status
       ip: ip
 
-
   startBearer: (id) ->
     self = this
     self.queryBearer(id).then (res) ->
       self.activateBearer id  if not res or res.status_code isnt 1
-
-  initMMS: ->
-    @invoke "AT+CMMSINIT"
-
-  terminateMMS: ->
-    @invoke "AT+CMMSTERM"
-
-  startMMS: ->
-    self = this
-    self.initMMS().then null, error = ->
-      self.terminateMMS().then ->
-        self.initMMS()
-
-  editMMS: (edit) ->
-    @invoke "AT+CMMSEDIT=" + Number(edit or false)
-
-  downloadMMSText: (text, name) ->
-    downloadMMS.call this, "TEXT", text, name
-
-  downloadMMSTitle: (title) ->
-    downloadMMS.call this, "TITLE", title
-
-  downloadMMSPicture: (data, name) ->
-    downloadMMS.call this, "PIC", data, name
-
-  setMMSRecipient: (address) ->
-    if Array.isArray(address)
-      self = this
-      return Q.all(address.map((addr) ->
-        self.setMMSRecipient addr
-      ))
-    @invoke "AT+CMMSRECP=\"#{address}\""
-
-  viewMMS: ->
-    @invoke "AT+CMMSVIEW", (lines) ->
-      tokens = parse lines.shift()
-      files = lines.map (line) ->
-        t = parse line
-        index : Number(t[0])
-        name  : t[1]
-        type: switch Number(t[2])
-          when 2 then "text"
-          when 3 then "text/html"
-          when 4 then "text/plain"
-          when 5 then "image"
-          when 6 then "image/gif"
-          when 7 then "image/jpg"
-          when 8 then "image/tif"
-          when 9 then "image/png"
-          when 10 then "smil"
-          else "unknown"
-        size: Number(t[3])
-
-      type: switch Number(tokens[0])
-        when 0 then "received"
-        when 1 then "sent"
-        when 2 then "unsent"
-        else "unknown"
-      sender   : tokens[1]
-      to       : tokens[2].split(";")
-      cc       : tokens[3].split(";")
-      bcc      : tokens[4].split(";")
-      datetime : Date(tokens[5])
-      subject  : tokens[6]
-      size     : Number(tokens[7])
-      files    : files
-
-  pushMMS: ->
-    @invoke
-      command: "AT+CMMSSEND"
-      timeout: 200000
 
   requestUSSD: (ussd) ->
     @invoke "AT+CUSD=1,\"#{ussd}\""

@@ -15,3 +15,4 @@ src/
 .jshintrc
 .idea/
 
+sftp-config.json

@@ -1,18 +1,14 @@
 {
   "name": "simcom",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "main": "index.js",
   "description": "",
   "keywords": [
     "at",
     "gsm",
-    "modem",
     "serial",
     "sms",
-    "mms",
-    "ussd",
     "simcom",
-    "sim800",
     "sim900"
   ],
   "author": {
@@ -23,7 +19,7 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https: //gitlab.com/semencov/simcom.git"
+    "url": "https://gitlab.com/semencov/simcom.git"
   },
   "licenses": [
     {
