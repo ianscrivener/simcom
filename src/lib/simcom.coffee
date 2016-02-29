@@ -31,7 +31,7 @@ class SimCom
     ].forEach (e) =>
       @modem.on e, (args...) =>
         args.unshift e
-        @emit.apply @, args
+        @emit.apply this, args
         return
 
       return
