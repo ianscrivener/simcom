@@ -217,7 +217,7 @@ class SimCom
 
     # Setup SMS memory
     @execute "AT+CNMI=2,0", 2000, 'OK'
-    @execute "AT+CPMS=\"SM\",\"SM\",\"SM\"", 2000
+    @execute "AT+CPMS=\"SM\",\"SM\",\"SM\"", 2000, "OK"
     @execute "AT+CPBS=\"SM\"", 1000, 'OK'
 
     @getLastError()
