@@ -187,8 +187,40 @@ class SimCom
     defer.promise
 
 
-  tryConnectOperator: ->
+  init: ->
+    # Reset to factory defaults
+    @execute "AT&F", 1000, 'OK'
+
+    # Set Mobile Equipment Error Code
+    @execute "AT+CMEE=0", 500, 'OK'
+
+    # Set error text-mode
+    @execute "AT+CEER=0", 500, 'OK'
+
+    # Set volume
+    @execute "AT+CLVL=100", 1000, 'OK'
+
+    # Enable Called ID casting
+    @execute "AT+CLIP=1", 500, 'OK'
+
+    # Set call presentation
+    @execute "AT+COLP=1", 500, 'OK'
+
+    # Set the SMS mode to text
+    @execute "AT+CMGF=1", 500, 'OK'
+
+    # Select operator
     @execute "AT+COPS=0", 60000, 'OK'
+
+    # Register network
+    @execute "AT+CREG=1", 2000, 'OK'
+
+    # Setup SMS memory
+    @execute "AT+CNMI=2,0", 2000, 'OK'
+    @execute "AT+CPMS=\"SM\",\"SM\",\"SM\"", 2000, "+CPMS:"
+    @execute "AT+CPBS=\"SM\"", 1000, 'OK'
+
+    @getLastError()
 
   # Reset to the factory settings
   setFactoryDefaults: ->
@@ -198,7 +230,7 @@ class SimCom
   setEchoOff: ->
     @execute "ATE0", 2000, 'OK'
 
-  # switch off echo
+  # set volume
   setVolume: (level=5) ->
     @execute "AT+CLVL=#{level}", 2000, 'OK'
 
@@ -211,6 +243,9 @@ class SimCom
 
   setCallPresentation: ->
     @execute "AT+COLP=1", 2000, 'OK'
+
+  setCallIdentification: ->
+    @execute "AT+CLIP=1", 2000, 'OK'
 
   getLastError: ->
     @invoke "AT+CEER", (lines=[]) ->
