@@ -18,8 +18,7 @@ class SimCom
     @isBusy = false
 
     @modem = require("./modem")(device, options)
-    self = this
-    
+
     # delegates modem events
     [
       "open"
@@ -29,10 +28,10 @@ class SimCom
       "end ring"
       "end call"
       "over-voltage warnning"
-    ].forEach (e) ->
-      self.modem.on e, (args...) ->
+    ].forEach (e) =>
+      @modem.on e, (args...) =>
         args.unshift e
-        self.emit.apply self, args
+        @emit.apply @, args
         return
 
       return
@@ -107,7 +106,7 @@ class SimCom
       type: (if m.length > 2 then m[2] else "SMS")
 
     @readSMS(m.index).done (res) -> self.emit "new message", res, m
-  
+
     return
 
   handleUSSD = (m) ->
@@ -187,7 +186,7 @@ class SimCom
       return
     defer.promise
 
-  
+
   tryConnectOperator: ->
     @execute "AT+COPS=0", 60000, 'OK'
 
