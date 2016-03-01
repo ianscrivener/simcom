@@ -109,7 +109,7 @@ class Modem
 
     @options = options
     @device = device
-    
+
     @tty = null
     @opened = false
     @lines = []
@@ -122,7 +122,7 @@ class Modem
     @buffer = new Buffer(0)
     buffertools.extend @buffer
     return
-  
+
   util.inherits Modem, EventEmitter
 
   open: (timeout) ->
@@ -260,16 +260,16 @@ class Modem
 
     return  if line.substr(0, 2) is "AT"
     return  if processUnboundLine.call(this, line)
-    
+
     @lines.push line
     processLines.call this
     return
 
   isResultCode = (line) ->
-    /(^OK|ERROR|BUSY|DATA|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT|\+CM[ES]|> $)|(^CONNECT( .+)*$)/i.test line
+    /(^OK|ERROR|BUSY|DATA|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT|\+CM[EPS]*|> $)|(^CONNECT( .+)*$)/i.test line
 
   isErrorCode = (line) ->
-    /^(\+CM[ES]\s)?ERROR(\:.*)?|BUSY|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT$/i.test line
+    /^(\+CM[EPS]\s)?ERROR(\:.*)?|BUSY|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT$/i.test line
 
   processLines = ->
     return  unless @lines.length
@@ -284,7 +284,7 @@ class Modem
     defer = @executions[0]
     execution = defer and defer.execution
 
-    exec = execution.exec?.split("\r")
+    exec = execution?.exec?.split("\r") or ""
     cmd = exec.shift()
 
     if responseCode is "> "
@@ -314,7 +314,7 @@ class Modem
 
       if isErrorCode responseCode
         error = new Error("#{cmd} responsed error: '#{responseCode}'")
-        
+
         if m = responseCode.match /^\+CM[ES] ERROR\: (\d+)/
           error = errorCodes[m[1]]  if errorCodes[m[1]]?
 
@@ -323,11 +323,11 @@ class Modem
         execution.callback?(error, null)
         defer.reject error
         return
-      
+
       if typeof response['success'] isnt 'undefined' and not response['success']
         error = new Error("#{cmd} missed the awaited response. Response was: #{responseCode}")
         error.code = responseCode
-        
+
         execution.callback?(error, null)
         defer.reject error
         return
@@ -389,6 +389,11 @@ class Modem
         return
     }
     {
+      expr: /^\+CEER: (.+)$/i
+      func: (m) ->
+        return
+    }
+    {
       unhandled: true
       expr: /^\+CREG: (\d)$/i
       func: (m) ->
@@ -396,7 +401,7 @@ class Modem
         return
     }
   ]
-  
+
 
 
 init = (device, options) ->
