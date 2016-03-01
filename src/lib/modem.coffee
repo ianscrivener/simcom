@@ -207,8 +207,6 @@ class Modem
       pdu: pdu
       timeout: timeout
 
-    log and log.write JSON.stringify(defer.execution) + "\n"
-
     fetchExecution.call this  if @executions.push(defer) is 1
     defer.promise
 
@@ -387,6 +385,11 @@ class Modem
     }
     {
       expr: /^\+CMGS: (.+)$/i
+      func: (m) ->
+        return
+    }
+    {
+      expr: /^\+CEER: (.+)$/i
       func: (m) ->
         return
     }
