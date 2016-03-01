@@ -207,6 +207,8 @@ class Modem
       pdu: pdu
       timeout: timeout
 
+    log and log.write JSON.stringify(defer.execution) + "\n"
+
     fetchExecution.call this  if @executions.push(defer) is 1
     defer.promise
 
@@ -266,10 +268,10 @@ class Modem
     return
 
   isResultCode = (line) ->
-    /(^OK|ERROR|BUSY|DATA|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT|\+CM[ES]|> $)|(^CONNECT( .+)*$)/i.test line
+    /(^OK|ERROR|BUSY|DATA|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT|\+CM[EPS]*|> $)|(^CONNECT( .+)*$)/i.test line
 
   isErrorCode = (line) ->
-    /^(\+CM[ES]\s)?ERROR(\:.*)?|BUSY|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT$/i.test line
+    /^(\+CM[EPS]\s)?ERROR(\:.*)?|BUSY|NO ANSWER|NO CARRIER|NO DIALTONE|OPERATION NOT ALLOWED|COMMAND NOT SUPPORT$/i.test line
 
   processLines = ->
     return  unless @lines.length
